@@ -5,24 +5,25 @@ The step-by-step procedure, including the codes and scripts for sequence and sta
 
 The content list of the procedure is shown below.
 1. Sequence analysis
-  -  Filter and trim metagenomic reads
+  -  Clean metagenomic reads
   -  Assemble metagenomic reads and predict CDS
   -  Reconstruct metagenome-assembled genomes (MAGs)
-  -  Identify species groups (SGs) using rpS3 gene
-  -  Link the SG to MAGs
-  -  Estimate functional traits for representative MAGs
+  -  Identify species groups (SG) using rpS3 gene
+  -  Screen the representative SG with MAGs
+  -  Estimate functional traits for the representative SG
 
 2. Statistical analysis
   -  Calculate the community-weighted means (CWM) of functional traits
-  -  Identify the key functional traits
-
-
+  -  Identify the key functional traits through trait-environment relationship (TER)
+  -  Calculate the index of environmental adaptation based on TER
+  -  Fit the relationships of the species' index and its niche optima
+  
 
 ## 1. Sequence analysis
 
-### 1. Filter and trim metagenomic reads
+### 1-1. Clean metagenomic reads
 
-#### 1-1. Detect the potential adapter and contamination
+#### 1-1-1. Detect the potential adapter and contamination
 
 ```
 fastq_f=$1
@@ -32,7 +33,7 @@ cores=$2
 fastqc --format fastq  --extract --threads $cores ${fastq_f}
 ```
 
-#### 1-2. Trim the potential contamination sequence
+#### 1-1-2. Trim the potential contamination sequence
 
 According to the summary result from FastQC, the appropriate adapter set could be set in the Trimmomatic program.
 ```
@@ -63,7 +64,7 @@ cat ${r1_s} ${r2_s} > $single
 Note that it is necessary to check the quality of trimmed reads using FastQC to make sure that the contaminated adapters have been trimmed from the sequence. 
 
 
-### 2. Assemble metagenomic reads and predict CDS
+### 1-2. Assemble metagenomic reads and predict CDS
 
 After cleaning the reads, MEGAHIT, a memory-efficient and fast metagenomic assembler, is selected to perform de novo assembly for each individual sample. Other popular metagenomic assembler of SPAdes, or the co-assembly strategy are also encouraged when the computational resource is sufficient.
 
@@ -93,11 +94,11 @@ prodigal -p meta -i ${sample_contig_f} -a ${sample_contig_f}.genes.faa -d ${samp
 
 ```
 
-### 3. Reconstruct metagenome-assembled genomes (MAGs)
+### 1-3. Reconstruct metagenome-assembled genomes (MAGs)
 
 The DAS-Tool program is used to recover metagenome-assembled genomes (MAGs) from each assembly. Before running the DAS-Tool, the four widely-used binning tools were firstly used to reconstruct preliminary MAGs from each assembly, including MaxBin2, MetaBat1, MetaBat2 and CONCOCT. Then, these binning results were integrated by the DAS Tool, resulting in a final list of dereplicated MAGs. The quality of each MAG, including completeness and contamination were evaluated using CheckM, and the taxonomic assignment is performed by GDTB-tk.
 
-#### 3-1. Align the reads against the contigs
+#### 1-3-1. Align the reads against the contigs
 
 For each of samples, The clean reads are aligned against the contigs from the samples using Bowtie 2. Then the alignment is sorted using Samtools for the next step.
 
@@ -119,7 +120,7 @@ bowtie2 --threads $cores -x $refer -1 $r1 -2 $r2 -U $single | samtools view -uT 
 
 ```
 
-#### 3-2. Perform initial binning using 4 binning algorithms 
+#### 1-3-2. Perform initial binning using 4 binning algorithms 
 
 The CONCOCT program is run as below.
 
@@ -222,7 +223,7 @@ run_MaxBin.pl -abund maxbin.${sample}.depth.txt -contig $refer -out ${bin_out} -
 
 The result of these four binning algorithms are summarized and exported into a file with tow columns, namely, contig ID and binning ID. The summary file is named as `megahit_sample-name_binning-name`.
 
-#### 3-3. Select the optimum MAGs results
+#### 1-3-3. Select the optimum MAGs results
 
 The DAS-Tool is run as below. Note that the protein sequence for each metagenomic assembly has been predicted above. To recover more genomes from each sample, the cutoff for the score in the program is adjusted to 0.3.
 
@@ -248,7 +249,7 @@ DAS_Tool -i ${prefix}_${methods[0]}.tsv,${prefix}_${methods[1]}.tsv,${prefix}_${
 After running DAS-Tool, the nucleotide sequence for the MAGs is extracted and exported in the suffixed ".fa". Then, the MAGs are filtered based on the completeness threshold of 40%, which is retrieved in the output of the program suffixed with "_DASTool_scaffolds2bin.txt".
 
 
-#### 3-4. Evaluate the quality of MAGs
+#### 1-3-4. Evaluate the quality of MAGs
 
 The quality of MAGs is evaluated using CheckM, and only the MAG with the completeness >=70% and the contamination <=10% are subject to the downstream analysis.
 ```
@@ -264,7 +265,7 @@ checkm qa --threads $cores --quiet --tab_table -f ${output_sum}  --out_format 2 
 checkm tree_qa  --out_format 2  --tab_table  -f ${output_tree}  ${output_dir}
 ```
 
-#### 3-5. Assign taxonomy for MAGs
+#### 1-3-5. Assign taxonomy for MAGs
 
 The taxonomic assignment is performed by GTDB-tk.
 ```
@@ -276,12 +277,12 @@ gtdbtk classify_wf --extension $suffix --genome_dir ${genome_dir} --out_dir ${ou
 
 ```
 
-### 4. Identify species groups (SGs) using rpS3 gene
+### 1-4. Identify species groups (SG) using rpS3 gene
 
 Taxonomic profiling of microbial communities is performed based on a conserved ribosomal protein rpS3 through a modified pipeline described previously (Diamond et al 2019). Not all microbial genomes are recovered from metagenomic sequencing due to insufficient sequencing, therefore, the approach of taxonomic profiling based on marker genes from metgenomic assembly could provide more comprehensively overview of microbial community compared to the genome-centric approach.
 
 
-#### 4-1. Identify and cluster the rpS3 genes from contigs of each sample 
+#### 1-4-1. Identify and cluster the rpS3 genes from contigs of each sample 
 
 For each of the samples, the amino acid sequence is screened to identify the rpS3 genes, then these genes are clustered at the 99% similarity with USEARCH. The script for screening and the relevant HMM files are copied and modified the one from [Prof. Probst's github](https://github.com/AJProbst/rpS3_trckr).
 
@@ -353,7 +354,7 @@ extr_rp(){
 ## ++++++++++++++ END OF FUNCTIONS ++++++++++++++ ##
 ```
 
-#### 4-2. Retrieve the contigs representing the rpS3 cluster 
+#### 1-4-2. Retrieve the contigs representing the rpS3 cluster 
 
 Among the metagenomic contigs containing a rpS3 gene belonging to a rpS3 cluster the one which is assigned to a MAG with the largest completeness is selected as the representative sequence for each SG. When multiple contigs corresponding to the rpS3 cluster are retrieved in MAGs, the longest one is selected. 
 
@@ -481,7 +482,7 @@ close OUT_scaf;
 
 ```
 
-#### 4-3. estimate the abundance of each rpS3 cluster
+#### 1-4-3. Estimate the abundance of each rpS3 cluster
 
 To get the abundance of each SG across samples, the clean reads are aligned against its representative sequence using Bowtie2, then the mapped reads with ≥ 99% sequence identity is filtered and counted using the ‘depth’ module of Samtools.The abundance of each SG in a sample is calculated as the total mapped bases on the representative sequence divided by the length of representative sequence and the total number of sequencing bases in the sample. 
 
@@ -683,7 +684,7 @@ sub read_fasta {
 
 ```
 
-#### 4-5. Assign the taxonomy to SGs
+#### 1-4-4. Assign the taxonomy to SGs
 
 Before determining the taxonomy of each SG, a local custom database is established, which consisting of the amino acid of rpS3 genes derived from available genomes the RefSeq prokaryotic genome database (downloading date: 2019-07, ~27000 genomes). After that, the sequence of each SG retrieved from the target samples are aligned against the datatbase using BlastP program. The taxonomy of the top one hit with the percent identity ≥ 50 is assigned to the query SG. 
 
@@ -698,7 +699,7 @@ blastp -query $query -db ${rpS3_ref_db} -outfmt 6 -out $out  -evalue 1e-3 -max_t
 
 ```
 
-The taxonomy of SGs is further validated by the clustering pattern of phylogenetic tree of the rpS3 gene. The amino acid sequence of all representative rpS3 genes are aligned using MAFFT, trimmed using trimA. A maximum likelihood phylogenomic tree is built by FastTree. Then, manually inspection of each SG on the tree could validate the accuracy of taxonomy based on sequence alignment. The taxonomy of the SGs that have no hits in our custome reference database and branch deeply in microbial lineages in the rpS3 tree were designated as ‘Unassigned’.
+The taxonomy of SGs is further validated by the clustering pattern of phylogenetic tree of the rpS3 gene. The amino acid sequence of all representative rpS3 genes are aligned using MAFFT, trimmed using trimA. A maximum likelihood phylogenetic tree is built by FastTree. Then, manually inspection of each SG on the tree could validate the accuracy of taxonomy based on sequence alignment. The taxonomy of the SGs that have no hits in our custome reference database and branch deeply in microbial lineages in the rpS3 tree were designated as ‘Unassigned’.
 
 ```
 
@@ -711,7 +712,8 @@ FastTree -log "${seq}.fastree.log" "${seq}.mafft.trimAl" > "${seq}.fastree.nwk"
 
 ```
 
-### 5. Link the SG to MAGs
+### 1-5. Screen the representative SG with MAGs
+
 
 The representative genomes for a subset of SGs were identified through the rpS3-containning contig sequence shared between the reconstructed MAGs and the SGs. Noted that not all genome of SGs were recovered using metagenome binning methods partly due to a great diversity and insufficient sequencing coverage for the samples. 
 
@@ -752,8 +754,8 @@ write.table(rps3.2.contig, file= "mag_2_sg.tsv",row.names=F,quote=F,sep="\t")
 
 ```
 
+### 1-6. Estimate functional traits for the representative SG
 
-### 6. Estimate functional traits for representative MAGs
 
 The protein-coding gene sequence of each representative genome is predicted by Prodigal and then annotated against KEGG database  and eggNOG database. The assignment of KOs to each gene is achieved using KOFamScan, which performs a homology search against a database of hidden Markov models with precomputed score thresholds for specific KOs. The annotation against eggNOG were performed using eggNOG mapper, then the COGs assigned to each gene is retrieved from the results. 
 
@@ -789,15 +791,9 @@ emapper.py -i $query -o ${query}.out --cpu $cores
 
 ## 2. Statistical analysis
 
-### 1. Calculate the community-weighted means (CWM) of functional traits
+### 2-1. Calculate the community-weighted means (CWM) of functional traits
 
 ```
-require(ggplot2)
-require(dplyr)
-require(tidyr)
-
-rm(list = ls())
-
 prefix <- 'marine'
 
 # get the abundance of non-red MAGs corresponding to rps3 clusters
@@ -830,33 +826,30 @@ ko.mag[, 1] <- NULL
 ko.mag <- ko.mag[colnames(otu.sub), ]
 
 # filter KO (at least present in 10% of MAGs)
-#ko.threshold <- round(0.1*nrow(ko.mag))
 ko.threshold <- 0
 ko.mag <- ko.mag[, colSums(ko.mag>0)>ko.threshold]
 
 # get the CWM-KO for each sample
+
 # check consistent names of two datasets
 sum(rownames(ko.mag) != colnames(otu.sub))
 
-cwm.ko <- FD::functcomp(ko.mag, as.matrix(otu.sub))
+cwm.ko <- weimea::cwm(otu.sub, traits = ko.mag)
+
+# save the result
 cwm.f <- paste0("../Data/", prefix, "_cwm-ko.RData")
 save(cwm.ko, file= cwm.f)
 
 ```
 
 
-### 2. Identify the key functional traits
+### 2-2. Identify the key functional traits
 
-The relationships between the abundance of each SGs or CWM values of functional traits (KO and KEGG modules) and environmental parameters are represented by Pearson correlation coefficients.
+The trait and environment replationship (TER), that is, the relationships between CWM values of functional traits (KO or COG items) and environmental parameters, are examined by Spearman rank correlation coefficients. The significance was tested with a row- and column-based permutation test to control inflated Type I error in the statistical analyses of TERs.
+
+
 
 ```
-require(ggplot2)
-require(dplyr)
-require(tidyr)
-require(broom)
-
-rm(list = ls())
-
 prefix <- 'marine'
 
 # get the CWM KO
@@ -867,24 +860,22 @@ load(ko.f)
 env.f <- paste0("../Data/", prefix, "_environment.tsv")
 env <- read.table(env.f, header=T, as.is=T, sep="\t")
 
-# get the KO copy number for each MAG
-cwm.ko %>% 
-  mutate(id= row.names(.)) %>% 
-  gather(key= 'ko', value= 'abund', -id) %>% 
-  left_join(env) -> cwm.ko.env
+# test the TER relationship using the max test
+#   (the row- and column-permutation test)
+cwm.ko.2.env.cor <- test_cwm(cwm.ko, env, 
+                             method= 'cor', test= 'max', perm= 499, parallel = 8)
 
-cor.method <- 'pearson'
-cwm.ko.env %>% 
-  mutate(abund= as.numeric(abund)) %>% 
-  group_by(ko) %>% 
-  do(glance(cor.test(.$abund, .$gradient, method= cor.method, na.rm=T))) -> cwm.ko.env.cor
+cwm.ko.2.env.cor$out %>% 
+  mutate(var.pair= rownames(.)) %>% 
+  mutate(ko= sub("(K\\d+).*", "\\1", var.pair)) %>% 
+  select(ko, r, starts_with('P_')) %>% 
+  rename(cor= r, pvalue= P_max) %>% 
+  mutate(group= prefix) -> cwm.ko.env.cor
 
-p.thresh <- 0.05
+p.thresh.cor <- 0.05
+
 cwm.ko.env.cor %>% 
-  drop_na() %>%   
-  select(ko, estimate, p.value) %>% 
-  rename(cor= estimate, pvalue= p.value) %>% 
-  filter(pvalue <= p.thresh) %>% 
+  filter(pvalue <= p.thresh.cor) %>% 
   mutate(direc= if_else(cor<0, 'negative', 'positive')) -> cwm.ko.env.cor.signif
 
 # assign the full KEGG annotation for each KO
@@ -895,67 +886,102 @@ cwm.ko.env.cor.signif %>%
   left_join(ko.annot) -> cwm.ko.env.cor.signif
 
 
-# 2. calculate the relationship between module abundance and pH 
-ko2mod <- read.table("../Tables/kegg_ko2module.tsv",header=F,as.is=T,sep="\t")
-colnames(ko2mod) <- c('ko', 'module')
-module.annot <- read.table("../Tables/kegg_module.list",header=F,as.is=T,sep="\t")
-colnames(module.annot) <- c('module', 'annot')
+```
 
-# calculate the abundance of module using its component of KOs
-#      and the number of hit KO per module
-cwm.ko.env %>% 
-  mutate(abund= as.numeric(abund)) %>% 
-  left_join(ko2mod) %>% 
-  drop_na() %>% # discard these KO without assigned to any module
-  group_by(id, module) %>% 
-  # using the median value of KOs as the module abundance
-  summarise(med.abund= median(abund), ko.count= length(ko)) %>% 
-  ungroup(id, module) %>% 
-  left_join(env)  -> cwm.module.env
+After retrieving a list of KO significantly associated with environmental factors (like lake alkalinity, soil temperature and marine salinity), we could easily pinpoint the underlying functional traits that closely associated with their environmental distribution and adaptation of microbial species across gradients.
 
-# total number of KO per module
-ko2mod %>% 
-  group_by(module) %>% 
-  summarise(ko.total= length(ko)) -> ko2mod.count        
-            
-# the total count of KO per module in samples
-cwm.module.env %>% 
-  left_join(ko2mod.count) %>% 
-  arrange(module) %>% 
-  select(module, ko.count, ko.total) %>% 
-  unique() %>% 
-  mutate(ratio= paste0(ko.count, '/', ko.total),
-         complete= round(ko.count/ko.total, digits=2)) %>% 
-  arrange(desc(complete)) -> module.completeness
 
-# correlation between environmental gradient and module abundance
-cor.method <- 'pearson'
-cwm.module.env %>% 
-  mutate(abund= as.numeric(med.abund)) %>% 
-  group_by(module) %>% 
-  do(glance(cor.test(.$abund, .$gradient, method= cor.method, na.rm=T))) -> module.env.cor
+### 2-3. Calculate the index of environmental adaptation based on TER
 
-#
-p.thresh <- 0.05
-module.env.cor %>% 
-  select(module, estimate, p.value) %>% 
-  rename(cor= estimate, pvalue= p.value) %>% 
+We proposed An index of environmental adaptation (iEA) to quantify the adaptive capacity of a species to environmental stress by considering its key traits and their relationships with environments. The iEA is calculated as the mean value of the TER across the species’ traits weighted by the copy number of KOs.
+
+
+Positive and negative iEA values indicate that a microbial species is dominated by alkaline-tolerant and alkaline-sensitive traits, respectively, while an iEA of zero suggests the two kinds of traits equally dominate 
+
+
+```
+prefix <- 'marine'
+
+#  get the KO copy number for each MAG
+ko.f <- paste0("../Data/", prefix, "_ko_per_genome.tsv")
+ko.mag <- read.table(ko.f, header=T, sep="\t", as.is=T)
+
+## TER (CWM-KO ~ gradient)
+cor.f <- paste0("../Tables/", prefix, "_kegg_ko_2_env_corr_max_text.tsv")
+cwm.ko.env.cor <- read.delim(cor.f, header=T, sep="\t", as.is=T)
+
+p.thresh.cor <- 0.05
+# using the KOs that significantly related to pH
+cwm.ko.env.cor %>% 
   drop_na() %>% 
-  filter(pvalue <= p.thresh) %>% 
-  mutate(direc= if_else(cor<0, 'negative', 'positive')) %>% 
-  left_join(module.completeness[, c('module', 'ratio')]) %>% 
-  left_join(module.annot) %>% 
-  arrange(module) %>% 
-  mutate(ratio= paste0("'", ratio, "'")) -> module.env.cor.signif
+  rename(cor= r, p.value= P_max) %>% 
+  filter(p.value < p.thresh.cor) %>% 
+  select(ko, cor)  -> ko.env.index
 
-cor.f <- paste0("../Tables/", prefix, "_kegg_module_2_env_corr_signif_w_annot.tsv")
-write.table(module.env.cor.signif,
-            file= cor.f,
-            row.names=F,sep="\t",quote=F)
+# calculate the index considering the effect of the KO copy number
+ko.mag %>% 
+  gather(key= 'ko', value= 'copy', -id) %>% 
+  right_join(ko.env.index) %>% 
+  filter(copy !=0) %>% 
+  group_by(id) %>%
+  summarise(adapt.index= sum(cor*copy)/sum(copy)) -> mag.2.env.adapt
+
 
 ```
 
-After retrieving a list of KO and KEGG modules significantly associated with environmental factors (like lake alkalinity, soil temperature and marine salinity), we could easily pinpoint the underlying functional traits that closely associated with their environmental distribution and adaptation of microbial species across gradients.
+
+### 2-4. Fit the relationships of the species' index and its niche optima
+  
+The extent of adaptation index to the species optimum niche was accessed by the relationship between the index of a species and its pH optima through a linear regression model. The niche optima of an individual (i.e., pH or salinity) could reflect the optimum niche where the species is expected to be most abundant, and was calculated based on its abundance across samples and lake pH of samples where the species was identified.
+
+```
+
+## get optimal environment for each MAG
+niche.f <- paste0("../Tables/", prefix, "_mag_env_optima.tsv")
+mag.2.env <- read.table(niche.f, header=T, sep="\t", as.is=T)
+mag.2.env %>% 
+  select(mag, env.w.abund) %>% 
+  rename(env= env.w.abund) -> mag.2.env
+
+# merge KO adaptation index and niche optima together
+mag.2.env.adapt %>%
+  rename(mag= id) %>%
+  right_join(mag.2.env) -> mag.2.env.adapt2
+
+# fit the relationship
+mag.2.env.adapt2 %>% 
+  do(glance(lm(.$adapt.index ~ .$env))) -> mag.env.lm
+
+p.thresh.lm <- 0.05
+mag.env.lm %>% 
+  mutate(signif= if_else(p.value < p.thresh.lm,
+                         'signif', 'insignif')) %>%
+  mutate(adj.r.squared = round(adj.r.squared, 2)) %>% 
+  mutate(data= prefix)  -> mag.env.lm
+
+mag.2.env.adapt2 %>% 
+  mutate(data= prefix) %>% 
+  left_join(mag.env.lm) %>%
+  drop_na() -> mag.2.env.adapt2
+
+## show the relationship using scatter
+my.linetype <- c('signif'=1, 'insignif' = 2)
+
+mag.2.env.adapt %>% 
+  ggplot(aes(x= env, y= adapt.index)) +
+  geom_point(size= 4, pch=21, fill= 'grey', stroke=0.1) +
+  # add the fitted line
+  geom_smooth(aes(linetype= signif),
+              method= 'lm', se= T, size= 1) +
+  scale_linetype_manual(name= 'Significance',
+                        values= my.linetype) +
+  
+  labs(x= 'Niche optima', y= 'Adaptation index') +
+  facet_wrap(.~direc, scales= 'free_y', nrow= 1) + 
+  theme(legend.position = 'none', panel.grid.minor = element_blank())
+
+
+```
 
 
 You can use the [editor on GitHub](https://github.com/mingleiR/test/edit/gh-pages/index.md) to maintain and preview the content for your website in Markdown files.
